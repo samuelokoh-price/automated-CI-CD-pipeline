@@ -29,7 +29,7 @@ jobs:
       # CHANGE 2: added 'working-directory' so your tests run inside the app folder
       working-directory: ./Aesthetic-Calculator-main
       run: |
-        echo "No tests configured yet. Passing phase..."
+        pytest
 
   build-docker:
     needs: test
