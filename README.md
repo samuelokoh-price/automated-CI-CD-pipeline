@@ -20,17 +20,12 @@ If you want to run the project locally using a Python virtual environment:
    ```
 
 2. **Create and activate a virtual environment:**
-   * **macOS/Linux:**
+   * **Linux:**
      ```bash
      python3 -m venv venv
      source venv/bin/activate
-     ```
-   * **Windows (PowerShell):**
-     ```powershell
-     python -m venv venv
-     .\venv\Scripts\Activate.ps1
-     ```
 
+     ```
 3. **Install the dependencies:**
    ```bash
    pip install -r requirements.txt
@@ -61,6 +56,13 @@ To build and run the application inside a isolated Docker container:
 
 ---
 
-## 🧪 Testing
 
-*Instructions on how to run tests will go here once the automated testing phase is set up.*
+## 🔄 CI/CD Pipeline
+
+An automated GitHub Actions pipeline (`.github/workflows/devops-pipeline.yml`) that triggers on every push or pull request to the `main` branch. It automatically:
+1. Sets up the Python environment.
+2. Installs required dependencies.
+3. Executes unit tests via `pytest`.
+4. Validates the Docker build inside the `./Aesthetic-Calculator-main` context.
+
+

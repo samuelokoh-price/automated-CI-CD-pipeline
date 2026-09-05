@@ -6,3 +6,26 @@ env/
 # Python cache
 __pycache__/
 *.pyc
+
+# Local terraform directories
+.terraform/
+
+# Local state files
+*.tfstate
+*.tfstate.*
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Terraform configuration overrides and local vars
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI configuration file
+.terraformrc
+terraform.rc
