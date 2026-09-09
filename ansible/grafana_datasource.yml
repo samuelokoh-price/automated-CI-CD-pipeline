@@ -4,10 +4,10 @@ datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
-    url: http://localhost:9090 # ⚡ FIXED: Matches host network mode deployment
+    url: "http://host.docker.internal:9090" # ⚡ FIXED: Quotes remove VS Code warnings
     isDefault: true
     uid: "PROMETHEUS_PROD_ENGINE"
     editable: true
-    version: 2
+    version: 4
     jsonData:
       httpMethod: POST
