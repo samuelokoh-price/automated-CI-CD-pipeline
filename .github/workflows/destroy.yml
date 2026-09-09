@@ -1,0 +1,31 @@
+name: Production Infrastructure Teardown Pipeline
+
+on:
+  workflow_dispatch: # ⚡ Allows manual button click execution via GitHub UI
+
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: "eu-north-1"
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Ensures your state tracking records sync down cleanly
+    - name: Setup Terraform Engine
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.7.0"
+        terraform_wrapper: false
+
+    - name: Terraform Initialization
+      working-directory: ./terraform
+      run: terraform init -reconfigure
+
+    # ⚡ PURGES ALL INFRASTRUCTURE NODES INSTANTLY
+    - name: Destroy Cloud Resources
+      working-directory: ./terraform
+      run: terraform destroy -auto-approve
