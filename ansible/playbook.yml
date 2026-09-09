@@ -219,7 +219,7 @@
     # -----------------------------------------------------------
     - name: Verify reverse proxy resolves successfully from outside the host
       ansible.builtin.uri:
-        url: "http://{{ hostvars[inventory_hostname].ansible_host }}" # ⚡ FIXED: Explicitly uses your remote EC2 public IP
+        url: "http://{{ inventory_hostname }}" # ⚡ FIXED: Explicitly uses your remote EC2 public IP
         status_code: 200
         timeout: 5
       delegate_to: localhost
