@@ -3,7 +3,6 @@
   hosts: webservers
   become: true
 
-  # ⚡ FIXED: Added a variable placeholder to accept your dynamic pipeline tags
   vars:
     app_image: "docker.io/nginx:alpine" # Fallback default
 
@@ -91,7 +90,6 @@
         groups: docker
         append: yes
 
-    # ⚡ FIXED: Forces Ansible to reconnect so permissions pick up group updates
     - name: Reset connection to enforce new docker group permissions
       ansible.builtin.meta: reset_connection
        
@@ -129,14 +127,13 @@
     # -----------------------------------------------------------
     # 4. DEPLOY APPLICATION & MONITORING ENGINE STACK
     # -----------------------------------------------------------
-    # ⚡ FIXED: Pulls your actual app package using the dynamic input variable
     - name: Ensure custom web application container is running
       community.docker.docker_container:
         name: my_flask_app
         image: "{{ app_image }}"
         state: started
         restart_policy: always
-        pull: true # Forces pulling down updates if tag names match
+        pull: true 
         ports:
           - "127.0.0.1:5000:5000"
 
@@ -195,11 +192,20 @@
         dest: /etc/grafana/provisioning/dashboards/provider.yml
         mode: '0644'
 
-    - name: Upload pre-built Node Exporter Dashboard layout template
-      ansible.builtin.copy:
-        src: node_exporter_dashboard.json
+    # ⚡ FIXED: Downloads clean raw JSON dashboard code straight from Grafana's API
+    - name: Download and provision official Node Exporter Full template
+      ansible.builtin.get_url:
+        url: "https://grafana.com"
         dest: /var/lib/grafana/dashboards/node_exporter.json
         mode: '0644'
+        force: true
+
+    # ⚡ FIXED: Binds the downloaded template expressions to your database engine UID
+    - name: Configure dashboard metrics queries to use PROMETHEUS_PROD_ENGINE
+      ansible.builtin.replace:
+        path: /var/lib/grafana/dashboards/node_exporter.json
+        regexp: '"uid":\s*"\${DS_PROMETHEUS}"'
+        replace: '"uid": "PROMETHEUS_PROD_ENGINE"'
 
     - name: Deploy Grafana orchestration dashboard visualization engine
       community.docker.docker_container:
@@ -219,7 +225,7 @@
     # -----------------------------------------------------------
     - name: Verify reverse proxy resolves successfully from outside the host
       ansible.builtin.uri:
-        url: "http://{{ inventory_hostname }}" # ⚡ FIXED: Explicitly uses your remote EC2 public IP
+        url: "http://{{ inventory_hostname }}" 
         status_code: 200
         timeout: 5
       delegate_to: localhost
