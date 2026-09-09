@@ -186,11 +186,40 @@
         dest: /etc/grafana/provisioning/datasources/datasource.yml
         mode: '0644'
 
+    - name: Create Grafana provisioning and dashboard storage directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "472"   # ⚡ FIXED: Sets ownership to the internal Grafana container UID
+        group: "472"   # ⚡ FIXED: Sets ownership to the internal Grafana container GID
+        mode: '0755'
+      loop:
+        - /etc/grafana/provisioning/datasources
+        - /etc/grafana/provisioning/dashboards
+        - /var/lib/grafana/dashboards
+
+    # ⚡ FIXED: Enforce correct ownership on files copied from your local machine
+    - name: Provision Prometheus data source config file into Grafana path
+      ansible.builtin.copy:
+        src: grafana_datasource.yml
+        dest: /etc/grafana/provisioning/datasources/datasource.yml
+        owner: "472"
+        group: "472"
+        mode: '0644'
+
     - name: Provision Dashboard structural provider mapping file into Grafana path
       ansible.builtin.copy:
         src: grafana_dashboards_provider.yml
         dest: /etc/grafana/provisioning/dashboards/provider.yml
+        owner: "472"
+        group: "472"
         mode: '0644'
+
+    # Purges any legacy crash loops
+    - name: Purge any broken Grafana container instances
+      community.docker.docker_container:
+        name: grafana
+        state: absent
 
     - name: Deploy Grafana orchestration dashboard visualization engine
       community.docker.docker_container:
@@ -198,17 +227,13 @@
         image: grafana/grafana:11.5.1
         state: started
         restart_policy: always
-        # ⚡ FIXED: Removed the invalid 'restart: yes' parameter entirely
+        recreate: true 
         ports:
           - "3000:3000"
         volumes:
           - "/etc/grafana/provisioning/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro"
           - "/etc/grafana/provisioning/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/provider.yml:ro"
-          - "/var/lib/grafana/dashboards:/var/lib/grafana/dashboards:ro"
-
-    # ⚡ FIXED: Clean, crash-proof way to force Grafana to reboot and read the new Sourcing settings
-    - name: Force Grafana container restart to process updated datasources
-      ansible.builtin.command: docker restart grafana
+          - "/var/lib/grafana/dashboards:/var/lib/grafana/dashboards:rw"
 
     # -----------------------------------------------------------
     # 5. AUTOMATED END-TO-END SMOKE TEST

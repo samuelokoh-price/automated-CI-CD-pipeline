@@ -4,9 +4,8 @@ providers:
   - name: 'Infrastructure'
     orgId: 1
     folder: 'Infrastructure'
-    type: gnetId # ⚡ FIXED: Instructs Grafana to query the cloud gallery instead of local paths
+    type: file
     disableDeletion: false
-    editable: true
     updateIntervalSeconds: 3600
     options:
-      gnetId: 1860 # ⚡ FIXED: Natively downloads the official Node Exporter template code
+      path: /var/lib/grafana/dashboards
