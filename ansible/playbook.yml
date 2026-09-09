@@ -93,9 +93,8 @@
 
     # ⚡ FIXED: Forces Ansible to reconnect so permissions pick up group updates
     - name: Reset connection to enforce new docker group permissions
-      ansible.builtin.meta:
-        clear_host_errors: true
-
+      ansible.builtin.meta: reset_connection
+       
     # -----------------------------------------------------------
     # 3. NGINX SETUP & REVERSE PROXY CONFIGURATION
     # -----------------------------------------------------------
