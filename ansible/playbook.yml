@@ -230,10 +230,14 @@
         recreate: true 
         ports:
           - "3000:3000"
+        #FIXED: Tells Linux Docker to map host.docker.internal to the host gateway
+        etc_hosts:
+          host.docker.internal: "host-gateway"
         volumes:
           - "/etc/grafana/provisioning/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro"
           - "/etc/grafana/provisioning/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/provider.yml:ro"
           - "/var/lib/grafana/dashboards:/var/lib/grafana/dashboards:rw"
+
 
     # -----------------------------------------------------------
     # 5. AUTOMATED END-TO-END SMOKE TEST
