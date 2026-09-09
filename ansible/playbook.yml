@@ -198,6 +198,7 @@
         image: grafana/grafana:11.5.1
         state: started
         restart_policy: always
+        restart: yes
         ports:
           - "3000:3000"
         volumes:
