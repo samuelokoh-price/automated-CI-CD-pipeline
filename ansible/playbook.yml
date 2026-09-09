@@ -192,21 +192,6 @@
         dest: /etc/grafana/provisioning/dashboards/provider.yml
         mode: '0644'
 
-    # ⚡ FIXED: Downloads clean raw JSON dashboard code straight from Grafana's API
-    - name: Download and provision official Node Exporter Full template
-      ansible.builtin.get_url:
-        url: "https://grafana.com"
-        dest: /var/lib/grafana/dashboards/node_exporter.json
-        mode: '0644'
-        force: true
-
-    # ⚡ FIXED: Binds the downloaded template expressions to your database engine UID
-    - name: Configure dashboard metrics queries to use PROMETHEUS_PROD_ENGINE
-      ansible.builtin.replace:
-        path: /var/lib/grafana/dashboards/node_exporter.json
-        regexp: '"uid":\s*"\${DS_PROMETHEUS}"'
-        replace: '"uid": "PROMETHEUS_PROD_ENGINE"'
-
     - name: Deploy Grafana orchestration dashboard visualization engine
       community.docker.docker_container:
         name: grafana
