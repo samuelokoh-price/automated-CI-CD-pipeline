@@ -29,3 +29,30 @@ override.tf.json
 # CLI configuration file
 .terraformrc
 terraform.rc
+
+# Ansible local inventory and config
+hosts
+inventory.ini
+inventory/hosts.ini
+.ansible.cfg
+ansible.cfg
+
+# Retry files and logs
+*.retry
+*.log
+
+# Ansible cache and temporary files
+.ansible/
+facts.cache
+.zuul/
+.molecule/
+
+# Sensitive files and keys (if kept in project dir)
+*.pem
+*.key
+*vault*.yml
+*secret*
+
+# Downloaded external dependencies
+roles/external/
+collections/ansible_collections/

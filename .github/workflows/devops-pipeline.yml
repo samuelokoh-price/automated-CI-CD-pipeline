@@ -1,4 +1,4 @@
-name: CI/CD Calculator Pipeline
+name: Production End-to-End Deployment Pipeline
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
     branches: [ "main" ]
 
 jobs:
+  # STEP 1: VALIDATE THE CODE
   test:
     runs-on: ubuntu-latest
     steps:
@@ -19,32 +20,127 @@ jobs:
         python-version: '3.11'
 
     - name: Install dependencies
-      # CHANGE 1: added 'working-directory' so pip finds requirements.txt inside app/
       working-directory: ./Aesthetic-Calculator-main
       run: |
         python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
     - name: Run Tests
-      # CHANGE 2: added 'working-directory' so your tests run inside the app folder
       working-directory: ./Aesthetic-Calculator-main
       run: |
         pytest
 
-  build-docker:
+  # STEP 2: BUILD INFRASTRUCTURE FIRST
+  infrastructure-provision:
     needs: test
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: "eu-north-1"
+    outputs:
+      server_ip: ${{ steps.get-ip.outputs.SERVER_IP }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # Auto-creates the remote S3 tracking backend bucket if missing
+    - name: Ensure Terraform State S3 Bucket Exists
+      run: |
+        BUCKET_NAME="my-calculator-tfstate-storage"
+        REGION="eu-north-1"
+        
+        if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
+          echo "Bucket exists! Skipping creation."
+        else
+          echo "Bucket missing. Creating now..."
+          aws s3api create-bucket \
+            --bucket "$BUCKET_NAME" \
+            --region $REGION \
+            --create-bucket-configuration LocationConstraint=$REGION
+        fi
+
+    - name: Setup Terraform Engine
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.7.0"
+        terraform_wrapper: false 
+
+    # ⚡ FIXED: Added -reconfigure flag to safely link dynamically created backends
+    - name: Terraform Initialization
+      working-directory: ./terraform
+      run: terraform init -reconfigure
+
+    - name: Provision Resources via Terraform
+      working-directory: ./terraform
+      run: terraform apply -auto-approve
+
+    # Captures the public IP from your updated main.tf output block
+    - name: Capture Server IP
+      id: get-ip
+      working-directory: ./terraform
+      run: |
+        IP=$(terraform output -raw webapp_public_ip)
+        echo "SERVER_IP=$IP" >> $GITHUB_OUTPUT
+
+  # STEP 3: BUILD APPLICATION PACKAGES
+  build-and-push-docker:
+    needs: infrastructure-provision
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build local Docker image
-      uses: docker/build-push-action@v5
+    - name: Build and Push Docker image
+      uses: docker/build-push-action@v6
       with:
-        # CHANGE 3: Pointed the context and file paths directly to my app directory
         context: ./Aesthetic-Calculator-main
         file: ./Aesthetic-Calculator-main/Dockerfile
-        push: false 
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/aesthetic-calculator:latest 
+
+  # STEP 4: RUN SYSTEM CONFIGURATION & APP DEPLOYMENT
+  application-deploy:
+    needs: [build-and-push-docker, infrastructure-provision]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Ansible Configuration Engine
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ansible
+
+    - name: Configure Secure SSH Key Pair File Environment
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.ANSIBLE_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    # Recreates the hosts.ini inside the fresh runner using cross-job execution outputs
+    - name: Recreate Dynamic Inventory File
+      working-directory: ./ansible
+      run: |
+        echo "[webservers]" > hosts.ini
+        echo "${{ needs.infrastructure-provision.outputs.server_ip }} ansible_user=ubuntu" >> hosts.ini
+
+    # Runs playbook while passing the live dynamic Docker registry string variable
+    - name: Execute Server Provisioning Configuration
+      working-directory: ./ansible
+      run: |
+        ansible-playbook -i hosts.ini playbook.yml \
+          --private-key=~/.ssh/id_rsa \
+          --extra-vars "ansible_ssh_common_args='-o StrictHostKeyChecking=no' app_image=${{ secrets.DOCKER_USERNAME }}/aesthetic-calculator:latest"

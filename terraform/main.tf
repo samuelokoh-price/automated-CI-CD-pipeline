@@ -1,4 +1,18 @@
 # =================================================================
+# 0. TERRAFORM CONFIGURATION & REMOTE BACKEND
+# =================================================================
+terraform {
+  required_version = ">= 1.7.0"
+
+  backend "s3" {
+    bucket         = "my-calculator-tfstate-storage" # ⚡ FIXED: Matches the auto-creation script name
+    key            = "calculator/production.tfstate"
+    region         = "eu-north-1"
+    encrypt        = true
+  }
+}
+
+# =================================================================
 # 1. NETWORKING SETUP
 # =================================================================
 
@@ -48,7 +62,7 @@ resource "aws_security_group" "web_sg" {
   description = "Allow inbound HTTP web traffic and SSH management access"
   vpc_id      = aws_vpc.web_vpc.id
 
-  # Inbound HTTP Web Traffic
+  # Inbound HTTP Web Traffic (For Nginx)
   ingress {
     from_port   = 80
     to_port     = 80
@@ -56,7 +70,23 @@ resource "aws_security_group" "web_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Inbound SSH Terminal Access
+  # Grafana Dashboard
+  ingress {
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] 
+  }
+
+  # Prometheus Telemetry
+  ingress {
+    from_port   = 9090
+    to_port     = 9090
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] 
+  }
+
+  # Inbound SSH Terminal Access (For Ansible)
   ingress {
     from_port   = 22
     to_port     = 22
@@ -93,7 +123,7 @@ data "aws_ami" "ubuntu" {
 }
 
 # =================================================================
-# 4. EC2 COMPUTE INSTANCE WITH USER DATA & KEY PAIR
+# 4. EC2 COMPUTE INSTANCE WITH KEY PAIR (CLEANED)
 # =================================================================
 
 resource "aws_instance" "web_server" {
@@ -103,18 +133,6 @@ resource "aws_instance" "web_server" {
   vpc_security_group_ids = [aws_security_group.web_sg.id]
   
   key_name               = "dev-prctcs"
-
-  user_data = <<-EOF
-              #!/bin/bash
-              # Wait for cloud-init background upgrades to yield apt-lock
-              while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 1; done
-              
-              sudo apt-get update -y
-              sudo apt-get install -y apache2
-              sudo systemctl start apache2
-              sudo systemctl enable apache2
-              echo "<h1>Deployed via Terraform!</h1>" | sudo tee /var/www/html/index.html
-              EOF
 
   tags = {
     Name = "MyWebAppInstance"
@@ -128,4 +146,18 @@ resource "aws_instance" "web_server" {
 output "webapp_public_ip" {
   value       = aws_instance.web_server.public_ip
   description = "The public IP address of the web application server."
+}
+
+# =================================================================
+# 6. AUTOMATED ANSIBLE INVENTORY GENERATION
+# =================================================================
+
+resource "local_file" "ansible_inventory" {
+  content  = <<EOT
+[webservers]
+${aws_instance.web_server.public_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_rsa
+EOT
+
+  # Drops the file automatically into ansible directory
+  filename = "${path.module}/../ansible/hosts.ini"
 }

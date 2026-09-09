@@ -66,3 +66,32 @@ An automated GitHub Actions pipeline (`.github/workflows/devops-pipeline.yml`) t
 4. Validates the Docker build inside the `./Aesthetic-Calculator-main` context.
 
 
+---
+
+## 🚀 Deployment & Operational Workflows
+
+### 1. CI/CD (GitHub Actions)
+Every `push` or `pull request` to the `main` branch automatically fires a workflow that:
+1. Provisions an isolated Ubuntu worker environment.
+2. Installs dependencies and runs unit tests via `pytest`.
+3. Asserts container integrity by building the local Docker context.
+
+### 2. Infrastructure Provisioning (Terraform)
+The underlying host infrastructure is fully defined and provisioned via code:
+```bash
+cd terraform
+terraform init
+terraform plan
+terraform apply
+```
+
+### 3. Configuration Management & Observability (Ansible)
+Once the infrastructure is up, Ansible handles the zero-touch configuration of the environment:
+```bash
+cd ansible
+ansible-playbook -i inventory.ini configure-server.yml
+```
+*This playbook automatically installs Docker, configures Nginx routing, and deploys the Prometheus/Grafana monitoring agents.*
+
+### 4. Web App Deployment (🚧 Next Phase / In Progress)
+The application architecture is fully primed for deployment. The next step is updating the GitHub Actions pipeline or Ansible playbooks to handle the automated deployment of the Flask container onto the active host.

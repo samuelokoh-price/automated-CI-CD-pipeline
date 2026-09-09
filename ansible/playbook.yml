@@ -1,0 +1,227 @@
+---
+- name: Configure Production Web Server with Docker, Nginx, and Pre-Built Monitoring
+  hosts: webservers
+  become: true
+
+  # ⚡ FIXED: Added a variable placeholder to accept your dynamic pipeline tags
+  vars:
+    app_image: "docker.io/nginx:alpine" # Fallback default
+
+  tasks:
+    # -----------------------------------------------------------
+    # 1. SYSTEM PREREQUISITES
+    # -----------------------------------------------------------
+    - name: Ensure baseline package dependencies are present
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+        update_cache: yes
+
+    # -----------------------------------------------------------
+    # 2. DOCKER SETUP (OFFICIAL REPOSITORY ENGINE)
+    # -----------------------------------------------------------
+    - name: Clean up legacy or broken docker repository files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/docker.list
+        - /etc/apt/sources.list.d/docker.sources
+
+    - name: Create directory for Docker apt keyring
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download official Docker GPG key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+        force: true
+
+    - name: Add official Docker repository to Apt sources
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable"
+        state: present
+        filename: docker
+
+    - name: Create directory structure for Docker daemon configurations
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        mode: '0755'
+
+    - name: Configure Docker daemon JSON for internal metrics telemetry
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: |
+          {
+            "metrics-addr" : "0.0.0.0:9323",
+            "experimental" : true
+          }
+        mode: '0644'
+
+    - name: Install Docker and container components
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker engine is active and enabled
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add standard deployment user to docker system group
+      ansible.builtin.user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    # ⚡ FIXED: Forces Ansible to reconnect so permissions pick up group updates
+    - name: Reset connection to enforce new docker group permissions
+      ansible.builtin.meta:
+        clear_host_errors: true
+
+    # -----------------------------------------------------------
+    # 3. NGINX SETUP & REVERSE PROXY CONFIGURATION
+    # -----------------------------------------------------------
+    - name: Install Nginx reverse proxy webserver
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+
+    - name: Copy Flask reverse proxy configuration to Nginx
+      ansible.builtin.copy:
+        src: flask_proxy.conf
+        dest: /etc/nginx/sites-available/flask_proxy.conf
+        mode: '0644'
+
+    - name: Enable Flask proxy configuration
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/flask_proxy.conf
+        dest: /etc/nginx/sites-enabled/flask_proxy.conf
+        state: link
+
+    - name: Remove default Nginx site configuration
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Restart Nginx to apply changes
+      ansible.builtin.systemd:
+        name: nginx
+        state: restarted
+        enabled: yes
+
+    # -----------------------------------------------------------
+    # 4. DEPLOY APPLICATION & MONITORING ENGINE STACK
+    # -----------------------------------------------------------
+    # ⚡ FIXED: Pulls your actual app package using the dynamic input variable
+    - name: Ensure custom web application container is running
+      community.docker.docker_container:
+        name: my_flask_app
+        image: "{{ app_image }}"
+        state: started
+        restart_policy: always
+        pull: true # Forces pulling down updates if tag names match
+        ports:
+          - "127.0.0.1:5000:80"
+
+    - name: Deploy Node Exporter container for host level performance metrics
+      community.docker.docker_container:
+        name: node_exporter
+        image: prom/node-exporter:v1.8.2
+        state: started
+        restart_policy: always
+        network_mode: host
+        pid_mode: host
+        volumes:
+          - "/:/host:ro,rslave"
+
+    - name: Create Prometheus local environment tracking folder structure
+      ansible.builtin.file:
+        path: /etc/prometheus
+        state: directory
+        mode: '0755'
+
+    - name: Copy target collection settings file to remote Prometheus directory
+      ansible.builtin.copy:
+        src: prometheus.yml
+        dest: /etc/prometheus/prometheus.yml
+        mode: '0644'
+
+    - name: Deploy Prometheus telemetry indexing node container
+      community.docker.docker_container:
+        name: prometheus
+        image: prom/prometheus:v3.1.0
+        state: started
+        restart_policy: always
+        network_mode: host
+        volumes:
+          - "/etc/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+
+    - name: Create Grafana provisioning and dashboard storage directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - /etc/grafana/provisioning/datasources
+        - /etc/grafana/provisioning/dashboards
+        - /var/lib/grafana/dashboards
+
+    - name: Provision Prometheus data source config file into Grafana path
+      ansible.builtin.copy:
+        src: grafana_datasource.yml
+        dest: /etc/grafana/provisioning/datasources/datasource.yml
+        mode: '0644'
+
+    - name: Provision Dashboard structural provider mapping file into Grafana path
+      ansible.builtin.copy:
+        src: grafana_dashboards_provider.yml
+        dest: /etc/grafana/provisioning/dashboards/provider.yml
+        mode: '0644'
+
+    - name: Upload pre-built Node Exporter Dashboard layout template
+      ansible.builtin.copy:
+        src: node_exporter_dashboard.json
+        dest: /var/lib/grafana/dashboards/node_exporter.json
+        mode: '0644'
+
+    - name: Deploy Grafana orchestration dashboard visualization engine
+      community.docker.docker_container:
+        name: grafana
+        image: grafana/grafana:11.5.1
+        state: started
+        restart_policy: always
+        ports:
+          - "3000:3000"
+        volumes:
+          - "/etc/grafana/provisioning/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml:ro"
+          - "/etc/grafana/provisioning/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/provider.yml:ro"
+          - "/var/lib/grafana/dashboards:/var/lib/grafana/dashboards:ro"
+
+    # -----------------------------------------------------------
+    # 5. AUTOMATED END-TO-END SMOKE TEST
+    # -----------------------------------------------------------
+    - name: Verify reverse proxy resolves successfully from outside the host
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}"
+        status_code: 200
+        timeout: 5
+      delegate_to: localhost
+      become: false
