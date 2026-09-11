@@ -1,92 +1,246 @@
-# Automated GitOps End-to-End Git-to-Cloud CI/CD Pipeline
+# Automated AWS CI/CD Pipeline with Terraform, Ansible & Docker
 
-A production-grade, state-tracked Continuous Integration and Continuous Deployment (CI/CD) ecosystem. This system builds, validates, provisions, and deploys a custom containerized Python web application stack automatically upon code execution, integrated with real-time enterprise systems monitoring and reverse proxy telemetry routing frameworks.
+An end-to-end Continuous Integration and Continuous Deployment (CI/CD) system that automatically validates application changes, provisions AWS infrastructure, builds and publishes a Docker image, configures an EC2 host, deploys the application stack, and exposes monitoring through Prometheus and Grafana.
 
-## 📐 Systems Architecture Layout
+The project combines **CI/CD, Infrastructure as Code, configuration management, containerization, reverse proxying, and observability** into one reproducible workflow.
+
+## 📐 CI/CD Pipeline Architecture
+
+This diagram shows the **flow of a code change** from the developer's machine to the running application.
 
 ```mermaid
-graph TD
-    A[Local Git Commit Push] -->|Webhook Trigger| B[GitHub Actions Engine]
-    
-    subgraph Job 1: Quality Validation
-        B --> C[PyTest Verification Loop]
-    end
+flowchart LR
+    A[Developer<br/>Local Git Commit & Push]
+    B[GitHub Repository]
+    C[GitHub Actions]
+    D[PyTest<br/>Automated Validation]
+    E[Terraform<br/>Infrastructure Provisioning]
+    F[AWS Infrastructure]
+    G[Docker Buildx<br/>Build & Tag Image]
+    H[Docker Hub<br/>Container Registry]
+    I[Ansible<br/>Configuration & Deployment]
+    J[EC2 Production Host]
+    K[Docker Engine<br/>Running Containers]
 
-    subgraph Job 2: State-Tracked Infrastructure
-        C -->|Success| D[Terraform Core Engine]
-        D -->|Remote S3 State Check| E[AWS Infrastructure Footprint]
-        E -->|Provision| E1[VPC / IGW / Subnets]
-        E -->|Provision| E2[EC2 Compute Server Instance]
-        E -->|Provision| E3[Firewall Security Groups]
-    end
-
-    subgraph Job 3: Continuous Packaging
-        D -->|Success| F[Docker Buildx Engine]
-        F -->|Compile & Tag Container| G[Docker Hub Secure Registry]
-    end
-
-    subgraph Job 4: Automated Configuration & Deployment
-        G -->|Success| H[Ansible Automation Engine]
-        H -->|Secure SSH Dynamic Handshake| E2
-        E2 -->|Pulls Image| G
-        E2 -->|Launches Stack| I[Docker Engine Runtime Container Environment]
-    end
-
-    subgraph Live Production Node Components
-        I --> App[Calculator App Container: Port 5000]
-        I --> Proxy[Nginx Reverse Proxy: Port 80]
-        I --> NodeEx[Node Exporter Metrics Engine: Port 9100]
-        I --> Prom[Prometheus Telemetry Scraper: Port 9090]
-        I --> Graf[Grafana Monitoring Analytics UI: Port 3000]
-        
-        Proxy -->|Internal Gateway Forward| App
-        Prom -->|Scrape Loop| NodeEx
-        Prom -->|Scrape Loop| I
-        Graf -->|Query Database Link| Prom
-    end
+    A -->|git push| B
+    B -->|push trigger| C
+    C --> D
+    D -->|success| E
+    E --> F
+    E -->|success| G
+    G --> H
+    H -->|image available| I
+    I -->|SSH + configuration| J
+    J --> K
 ```
 
-## 🛠️ Core Engineering Technology Spectrum
-* **Pipeline Automation Orchestration:** GitHub Actions Workflow Framework
-* **Infrastructure-as-Code Engine:** HashiCorp Terraform (v1.7.0)
-* **Cloud Platform Footprint:** Amazon Web Services (AWS EC2, VPC, Internet Gateways, S3 Backends)
-* **Configuration Management Orchestrator:** Ansible Engine Architecture
-* **Container Virtualization Layers:** Docker, Docker Buildx, Containerd Engine
-* **Web Entry Handling Systems:** Nginx Webserver Engine (Reverse Proxy Layer Integration)
-* **Analytical Telemetry Pipeline:** Prometheus Telemetry Core & Grafana Analytical Dashboards
+### Pipeline stages
+
+1. **Validate** — GitHub Actions runs the application's PyTest test suite.
+2. **Provision** — Terraform creates or updates the required AWS infrastructure and uses remote state stored in S3.
+3. **Package** — Docker Buildx builds and tags the application image and pushes it to Docker Hub.
+4. **Configure & Deploy** — Ansible connects to the dynamically created EC2 instance, configures the host, pulls the image, and launches the containerized stack.
+
+## 🏗️ Runtime / Production Architecture
+
+This is the **infrastructure and application architecture** that exists after deployment. It is separate from the CI/CD pipeline above: the first diagram explains **how changes get deployed**, while this diagram explains **what is running in production**.
+
+```mermaid
+flowchart TB
+    U[Users / Internet]
+
+    subgraph AWS["AWS Cloud"]
+        IGW[Internet Gateway]
+
+        subgraph VPC["VPC"]
+            PUB[Public Subnet]
+            PRIV[Private Subnet]
+            SG[Security Groups]
+            EC2[EC2 Production Instance]
+
+            PUB --> EC2
+            PRIV --> EC2
+            SG -. controls traffic .-> EC2
+        end
+
+        S3[(S3<br/>Terraform Remote State)]
+    end
+
+    U --> IGW
+    IGW --> PUB
+    EC2 --> S3
+
+    subgraph HOST["EC2 Host — Docker Runtime"]
+        NGINX[Nginx<br/>Reverse Proxy :80]
+        APP[Calculator App<br/>Container :5000]
+
+        NODE[Node Exporter<br/>Metrics :9100]
+        PROM[Prometheus<br/>Metrics :9090]
+        GRAF[Grafana<br/>Dashboards :3000]
+
+        NET[Docker Bridge Network<br/>172.17.0.1]
+
+        NGINX -->|reverse proxy| APP
+        NET --- NGINX
+        NET --- APP
+        NET --- NODE
+        NET --- PROM
+        NET --- GRAF
+
+        PROM -->|scrapes| NODE
+        PROM -->|scrapes application metrics| APP
+        GRAF -->|queries metrics| PROM
+    end
+
+    EC2 --> HOST
+    U -->|HTTP :80| NGINX
+```
+
+### Runtime flow
+
+```text
+User
+  ↓
+Internet
+  ↓
+AWS Internet Gateway
+  ↓
+VPC / Subnet / Security Groups
+  ↓
+EC2 Instance
+  ↓
+Nginx :80
+  ↓
+Calculator Application :5000
+```
+
+Monitoring runs alongside the application:
+
+```text
+Application ───────┐
+                   ├──→ Prometheus ──→ Grafana
+Node Exporter ─────┘
+```
+
+## 🛠️ Core Engineering Technology Stack
+
+| Area | Technology | Role |
+|---|---|---|
+| Source Control | Git / GitHub | Stores source code and triggers the workflow |
+| CI/CD | GitHub Actions | Automates validation, provisioning, packaging, and deployment |
+| Testing | PyTest | Validates application behaviour automatically |
+| Infrastructure as Code | Terraform v1.7.0 | Provisions and manages AWS infrastructure |
+| Cloud | AWS | Provides the production infrastructure |
+| Remote Terraform State | Amazon S3 | Stores Terraform state remotely |
+| Configuration Management | Ansible | Configures the EC2 host and performs deployment tasks |
+| Containers | Docker / Docker Buildx | Packages and runs the application |
+| Registry | Docker Hub | Stores and distributes the application image |
+| Reverse Proxy | Nginx | Provides the public HTTP entry point and forwards traffic to the application |
+| Metrics | Prometheus | Collects and stores operational metrics |
+| Monitoring UI | Grafana | Visualizes metrics through dashboards |
+| Host Metrics | Node Exporter | Exposes host-level metrics to Prometheus |
 
 ## 🚀 Key Architectural Automations
-1. **Self-Healing S3 Remote Backend Sync:** The deployment system checks for the tracking vault dynamically via the AWS CLI and uses an initial `-reconfigure` flag to link storage states safely, preventing duplicate compute resources or server leaks on pipeline re-runs.
-2. **Dynamic Host Inventory Resolution:** The infrastructure configuration outputs live instance data to cross-job pipelines via `GITHUB_OUTPUT`, mapping dynamic target tracking structures into Ansible's runtime engine without manual IP address maintenance.
-3. **Automated Connection Session Refreshing:** Uses native `ansible.builtin.meta: reset_connection` logic to drop and recreate SSH connections dynamically, allowing group security adjustments to bind without breaking execution playbooks.
-4. **Isolated Bridge Gateway Telemetry:** Routes operational component queries directly through the virtual Docker bridge interface (`172.17.0.1`), passing query tasks between isolated container stacks securely without open host vulnerabilities.
 
-## 📦 Local Project Structure Reference
+1. **Automated Terraform State Initialization** — The deployment workflow checks for the Terraform S3 backend and uses `terraform init -reconfigure` when required so the workflow can correctly connect to the remote state backend across runs.
+
+2. **Dynamic Host Inventory Resolution** — Terraform outputs live EC2 instance information to GitHub Actions through `GITHUB_OUTPUT`, allowing the deployment stage to pass the current target host to Ansible without hard-coding an IP address.
+
+3. **Automated SSH Connection Refresh** — Ansible uses `ansible.builtin.meta: reset_connection` to refresh the SSH session when required after host/network configuration changes.
+
+4. **Docker Bridge-Based Internal Communication** — The monitoring components communicate through the Docker bridge/network rather than requiring every internal service to be exposed publicly.
+
+## 📦 Project Structure
+
 ```text
 ├── .github/workflows/
-│   ├── deploy.yml            # Four-Stage Production Deployment Blueprint
-│   └── destroy.yml           # Single-Click Infrastructure Teardown Automation
+│   ├── deploy.yml              # Four-stage deployment workflow
+│   └── destroy.yml             # Infrastructure teardown workflow
+│
 ├── terraform/
-│   ├── main.tf               # AWS Compute and Automation Networking Blueprint
-│   ├── variables.tf          # Machine Size and Region Parameter Mappings
-│   └── outputs.tf            # Dynamic Environment Telemetry Egress
+│   ├── main.tf                 # AWS infrastructure and networking
+│   ├── variables.tf            # Infrastructure parameters
+│   └── provider.tf              # Configuration settings and version requirements
+│
 ├── ansible/
-│   ├── playbook.yml          # Production Server System Provisioning Configuration
-│   ├── grafana_datasource.yml # Provisioned Database Link (Version-Forced)
-│   ├── grafana_dashboards_provider.yml # Dynamic Dashboard Storage Provider Map
-│   ├── prometheus.yml        # Telemetry Scrape Interval Configuration
-│   └── flask_proxy.conf      # Nginx Virtual Server Routing Profile
-└── Aesthetic-Calculator-main/ # Containerized Calculator Application Root
-    ├── Dockerfile            # Application Container Build Configurations
-    └── requirements.txt      # Python Package Dependency Configurations
+│   ├── playbook.yml            # Server configuration and deployment
+│   ├── grafana_datasource.yml  # Grafana data-source provisioning
+│   ├── grafana_dashboards_provider.yml
+│   │                             # Grafana dashboard provider configuration
+│   ├── prometheus.yml           # Prometheus scrape configuration
+│   └── flask_proxy.conf         # Nginx reverse-proxy configuration
+│
+└── Aesthetic-Calculator-main/
+    ├── Dockerfile               # Application container definition
+    └── requirements.txt         # Python dependencies
 ```
 
-## 🔧 Operational Configuration Checkpoints
+## 🔧 Operational Configuration
 
-To initialize this deployment infrastructure within an alternate repository, secure credentials must be set within the **GitHub Repository Settings ➡️ Secrets and variables ➡️ Actions** menu:
+The deployment workflow requires the following GitHub Actions secrets:
 
-* `AWS_ACCESS_KEY_ID`: Active IAM user alphanumeric credential key string (`AKIA...`).
-* `AWS_SECRET_ACCESS_KEY`: AWS authorization verification cryptographic token string.
-* `ANSIBLE_SSH_KEY`: Raw cryptographic text contents of the private server credential key pair (`.pem` file).
-* `DOCKER_USERNAME`: Authentication identity handle mapping to Docker Hub profiles.
-* `DOCKER_PASSWORD`: Personal Access Token authorizing container image distribution tasks securely.
+| Secret | Purpose |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | AWS authentication |
+| `AWS_SECRET_ACCESS_KEY` | AWS authentication |
+| `ANSIBLE_SSH_KEY` | Private SSH key used by Ansible to access the EC2 host |
+| `DOCKER_USERNAME` | Docker Hub authentication |
+| `DOCKER_PASSWORD` | Docker Hub Personal Access Token |
+
+Configure these under:
+
+**GitHub Repository → Settings → Secrets and variables → Actions**
+
+> **Security:** Never commit these values, private keys, `.pem` files, or other credentials to the repository.
+
+## 🔄 Deployment Lifecycle
+
+```text
+Code Change
+    ↓
+Git Push
+    ↓
+GitHub Actions
+    ↓
+PyTest
+    ↓
+Terraform
+    ↓
+AWS Infrastructure
+    ↓
+Docker Buildx
+    ↓
+Docker Hub
+    ↓
+Ansible
+    ↓
+EC2
+    ↓
+Docker Containers
+    ↓
+Nginx → Calculator App
+    ↓
+Prometheus → Grafana
+```
+
+## 🎯 What This Project Demonstrates
+
+- Automated CI/CD using GitHub Actions
+- Automated application testing with PyTest
+- Infrastructure as Code with Terraform
+- Remote Terraform state management with S3
+- AWS networking and EC2 provisioning
+- Dynamic infrastructure-to-deployment handoff
+- Configuration management with Ansible
+- Containerized application deployment with Docker
+- Private container image distribution through Docker Hub
+- Nginx reverse-proxy configuration
+- Infrastructure and application observability with Prometheus and Grafana
+- Automated infrastructure teardown
+- Reproducible deployment rather than manual server setup
+
+## ⚠️ Scope
+
+This is a portfolio project designed to demonstrate production-oriented DevOps practices on a small AWS deployment. The architecture intentionally keeps the infrastructure relatively simple: a single EC2 production host running the application and monitoring containers.
+
+The project demonstrates the **engineering workflow and operational concepts** used in larger environments without claiming that this small deployment has the scale or redundancy of a large enterprise platform.
